@@ -1,0 +1,485 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Laboratorio de motores</title>
+<style>
+:root{color-scheme:dark;--bg:#0a101a;--panel:#141e2d;--line:#2c3d53;--accent:#48d9c5;--text:#e5edf7}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,sans-serif}
+main{max-width:1250px;margin:auto;padding:20px}
+h1{font-size:26px;margin:0 0 6px}
+h2{font-size:17px;margin:0 0 14px}
+p{color:#aebed1;line-height:1.5}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px}
+.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+.grid>.panel{min-width:0}
+button,select,input[type=file]{font:inherit}
+button,select{background:#213148;border:1px solid #405675;border-radius:9px;padding:10px;color:var(--text)}
+button{cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.active{background:#12564e}
+label{display:inline-flex;gap:8px;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
+.stat{background:#0d1521;padding:12px;border-radius:10px;text-align:center}
+.stat b{display:block;font-size:25px;color:var(--accent);font-variant-numeric:tabular-nums}
+.stat small{color:#aebed1}
+canvas{display:block;width:100%;height:330px;background:#0b1420;border-radius:12px}
+.meter{height:10px;background:#2b3749;border-radius:6px;overflow:hidden}
+.meter div{height:100%;width:0;background:linear-gradient(90deg,#39d7b1,#ffd16c,#ff6273)}
+#shift{color:#ffce6f;min-height:24px;text-align:center;font-weight:bold}
+.pedals{display:flex;justify-content:center;gap:35px;padding:18px}
+.pedal-wrap{text-align:center}
+.pedal{
+ display:block;width:82px;height:145px;border-radius:16px;
+ background:repeating-linear-gradient(0deg,transparent 0 14px,#25303b 15px 23px),
+ linear-gradient(100deg,#667786,#d6dee5 45%,#7e8b98);
+ border:4px solid #5f6d7a;box-shadow:0 12px 0 #03070d,0 16px 22px #0009;
+ transform-origin:bottom;transition:transform .07s;touch-action:none;
+ user-select:none;-webkit-user-select:none;margin:0 auto 20px
+}
+.pedal.gas{height:175px;width:72px}
+.pedal.pressed{transform:perspective(400px) rotateX(24deg) translateY(7px);box-shadow:0 4px 0 #03070d}
+.gearbox{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:12px 0}
+.gearbox button{min-width:40px}
+.note{font-size:12px;color:#a8bad0;line-height:1.5}
+.files{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.files label{display:block;background:#0e1724;padding:10px;border-radius:9px;font-size:13px}
+.files input{display:block;width:100%;margin-top:8px;font-size:11px}
+#message{min-height:22px;color:#ffcf88;font-size:13px}
+.formula{text-align:center;color:#70e0cf;font-size:18px;padding:14px 0}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.stats{gap:5px}.stat{padding:10px 5px}.stat b{font-size:21px}main{padding:12px}.files{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>Laboratorio de motores</h1>
+<p>Mecánica interactiva · sonido dinámico · combustión educativa</p>
+<div class="panel row">
+<button id="power">⏻ Arrancar</button>
+<select id="engine" aria-label="Tipo de motor">
+<option value="1">Monocilíndrico</option>
+<option value="4" selected>4 cilindros en línea</option>
+<option value="6">V6</option>
+<option value="8">V8</option>
+<option value="rotary">Rotativo Wankel</option>
+</select>
+<label><input id="turbo" type="checkbox">Turbo</label>
+<label><input id="exhaust" type="checkbox">Escape deportivo</label>
+<label><input id="ecu" type="checkbox">ECU deportiva</label>
+<label><input id="xray" type="checkbox" checked>X-Ray</label>
+<label><input id="automatic" type="checkbox" checked>Cambio automático</label>
+</div>
+
+<div class="stats">
+<div class="stat"><b id="rpm">0</b><small>RPM</small></div>
+<div class="stat"><b id="speed">0</b><small>km/h virtuales</small></div>
+<div class="stat"><b id="gear">N</b><small>Marcha</small></div>
+<div class="stat"><b id="boost">0.00</b><small>bar relativos</small></div>
+</div>
+<div class="meter"><div id="rpmbar"></div></div>
+<div id="shift"></div>
+
+<div class="grid">
+<section class="panel">
+<h2>Vista mecánica</h2>
+<canvas id="view" aria-label="Animación del motor"></canvas>
+<p class="note">Animación ralentizada para observar el ciclo. Los motores V se muestran por bancadas desplegadas, no como un corte geométrico real.</p>
+<div class="legend">
+<span><i class="dot" style="background:#55b9ff"></i>Admisión</span>
+<span><i class="dot" style="background:#d6a1ff"></i>Compresión</span>
+<span><i class="dot" style="background:#ff9955"></i>Expansión</span>
+<span><i class="dot" style="background:#99aaad"></i>Escape</span>
+</div>
+</section>
+
+<section class="panel">
+<h2>Pedales y transmisión</h2>
+<div class="row">
+<label>Volumen <input id="volume" type="range" min="0" max="1" step=".01" value=".35"></label>
+</div>
+<div class="pedals">
+<div class="pedal-wrap">
+<button class="pedal" id="clutch" aria-label="Mantener embrague"></button>
+<span>Embrague</span><br><small>Shift izquierda</small>
+</div>
+<div class="pedal-wrap">
+<button class="pedal gas" id="gas" aria-label="Mantener acelerador"></button>
+<span>Acelerador</span><br><small>Espacio</small>
+</div>
+</div>
+<label style="display:flex">Gas fijo
+<input id="hold" type="range" min="0" max="100" value="0" style="flex:1">
+<span id="holdval">0%</span>
+</label>
+<div class="gearbox" id="gears"></div>
+<div class="row" style="justify-content:center">
+<button id="down">− Marcha</button>
+<button id="up">+ Marcha</button>
+<button id="brake">Frenar / B</button>
+</div>
+<p id="message" role="status"></p>
+<p class="note">En manual, mantén el embrague al cambiar. Usa ↑ y ↓ para las marchas y B para frenar. El gas fijo se suma al control de pedal por máximo.</p>
+</section>
+</div>
+
+<section class="panel">
+<h2>Química de la combustión · X-Ray</h2>
+<div class="formula">2 C₈H₁₈ + 25 O₂ → 16 CO₂ + 18 H₂O + energía</div>
+<p id="chem"></p>
+<p class="note">Combustión completa ideal del octano como modelo de gasolina. Las partículas no representan cantidades estequiométricas. No se simulan NOₓ, CO, mezcla real ni transferencia térmica.</p>
+</section>
+
+<section class="panel">
+<h2>Sonidos reales opcionales · archivos locales</h2>
+<p class="note">Sin archivos, se usa síntesis. El bucle del motor sustituye al sonido sintetizado; los demás archivos sustituyen sus efectos correspondientes. Los archivos permanecen en tu navegador. Para el motor y el silbido utiliza bucles recortados, preferiblemente WAV u OGG.</p>
+<div class="files">
+<label>Arranque<input type="file" accept="audio/*" data-sound="start"></label>
+<label>Bucle del motor<input type="file" accept="audio/*" data-sound="engine"></label>
+<label>Silbido del turbo<input type="file" accept="audio/*" data-sound="whistle"></label>
+<label>Descarga del turbo<input type="file" accept="audio/*" data-sound="blow"></label>
+<label>Cambio de marcha<input type="file" accept="audio/*" data-sound="shift"></label>
+</div>
+<label style="margin-top:14px">RPM del bucle original
+<input id="sampleRpm" type="number" min="500" max="15000" value="2000" step="100" style="width:90px">
+</label>
+<p class="note">Modificar la velocidad del bucle también cambia su tono. No equivale a un sistema profesional con múltiples grabaciones por carga y régimen.</p>
+<div id="audioStatus" class="note" role="status"></div>
+</section>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const TAU=Math.PI*2;
+const S={on:false,rpm:0,speed:0,gear:0,gas:0,boost:0,phase:0,cooldown:0};
+const keys={gas:false,clutch:false,brake:false};
+const pointer={gas:false,clutch:false,brake:false};
+const ratios=[0,3.5,2.2,1.52,1.14,.9,.73];
+const colors=["#55b9ff","#d6a1ff","#ff9955","#99aaad"];
+const names=["Admisión","Compresión","Expansión","Escape"];
+let audio,master,osc,osc2,motorGain,filter,turboOsc,turboGain;
+let noiseBuffer,engineLoop,whistleLoop;
+const buffers={},voices=new Set();
+let lastGas=0,autoTime=0,startBusy=false;
+function message(t){$("message").textContent=t}
+function target(param,value,time=.06){param.setTargetAtTime(value,audio.currentTime,time)}
+async function initAudio(){
+ if(!audio){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)throw Error("Este navegador no ofrece Web Audio.");
+  audio=new AC();
+  master=audio.createGain(); master.connect(audio.destination);
+  master.gain.value=+$("volume").value;
+  filter=audio.createBiquadFilter();filter.type="lowpass";filter.frequency.value=800;
+  motorGain=audio.createGain();motorGain.gain.value=0;
+  osc=audio.createOscillator();osc.type="sawtooth";
+  osc2=audio.createOscillator();osc2.type="triangle";
+  osc.connect(filter);osc2.connect(filter);filter.connect(motorGain);motorGain.connect(master);
+  osc.start();osc2.start();
+  turboOsc=audio.createOscillator();turboOsc.type="sine";
+  turboGain=audio.createGain();turboGain.gain.value=0;
+  turboOsc.connect(turboGain);turboGain.connect(master);turboOsc.start();
+  noiseBuffer=audio.createBuffer(1,audio.sampleRate,audio.sampleRate);
+  const d=noiseBuffer.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+ }
+ await audio.resume();
+}
+function loop(name){
+ if(!buffers[name]||!audio)return null;
+ const src=audio.createBufferSource(),gain=audio.createGain();
+ src.buffer=buffers[name];src.loop=true;gain.gain.value=0;
+ src.connect(gain);gain.connect(master);src.start();
+ return {src,gain};
+}
+function stopLoop(l){if(l){try{l.src.stop()}catch{}l.src.disconnect();l.gain.disconnect()}}
+function syncLoops(){
+ stopLoop(engineLoop);stopLoop(whistleLoop);
+ engineLoop=S.on?loop("engine"):null;
+ whistleLoop=S.on?loop("whistle"):null;
+}
+function effect(name){
+ if(!audio||audio.state!=="running")return;
+ const src=buffers[name]?audio.createBufferSource():
+ name==="blow"?audio.createBufferSource():audio.createOscillator();
+ const gain=audio.createGain(),now=audio.currentTime;
+ let duration=name==="start"?.7:name==="shift"?.12:.4;
+ if(buffers[name]){src.buffer=buffers[name];duration=src.buffer.duration}
+ else if(name==="blow"){src.buffer=noiseBuffer}
+ else{
+  src.type=name==="start"?"sawtooth":"triangle";
+  src.frequency.setValueAtTime(name==="start"?35:170,now);
+  src.frequency.exponentialRampToValueAtTime(name==="start"?95:55,now+duration);
+ }
+ gain.gain.setValueAtTime(.001,now);
+ gain.gain.linearRampToValueAtTime(buffers[name]?.5:name==="blow"?.18:.22,now+.015);
+ gain.gain.exponentialRampToValueAtTime(.001,now+Math.max(.03,duration));
+ src.connect(gain);gain.connect(master);voices.add(src);
+ src.onended=()=>{voices.delete(src);src.disconnect();gain.disconnect()};
+ src.start();src.stop(now+Math.max(.04,duration));
+}
+function updateAudio(){
+ if(!audio)return;
+ target(master.gain,+$("volume").value);
+ const running=S.on&&S.rpm>30;
+ const n=$("engine").value==="rotary"?2:+$("engine").value/2;
+ const freq=Math.max(12,S.rpm/60*n);
+ target(osc.frequency,freq);target(osc2.frequency,freq*.5);
+ target(filter.frequency,350+S.gas*1800+S.rpm*.15);
+ const volume=running?(.045+.07*S.gas)*($("exhaust").checked?1.6:1):0;
+ target(motorGain.gain,engineLoop?0:volume);
+ if(engineLoop){
+  const base=clamp(+$("sampleRpm").value||2000,500,15000);
+  target(engineLoop.src.playbackRate,clamp(S.rpm/base,.15,5));
+  target(engineLoop.gain.gain,running?.22+S.gas*.4:0);
+ }
+ const b=$("turbo").checked?S.boost:0;
+ target(turboOsc.frequency,1000+b*2400);
+ target(turboGain.gain,whistleLoop?0:b*.035);
+ if(whistleLoop){
+  target(whistleLoop.src.playbackRate,.7+b);
+  target(whistleLoop.gain.gain,b*.22);
+ }
+}
+$("power").onclick=async()=>{
+ if(startBusy)return;
+ if(S.on){
+  S.on=false;S.boost=0;syncLoops();
+  for(const v of voices){try{v.stop()}catch{}}
+  $("power").textContent="⏻ Arrancar";$("power").classList.remove("active");
+  return;
+ }
+ startBusy=true;
+ try{await initAudio();S.on=true;S.rpm=850;effect("start");syncLoops();
+ $("power").textContent="⏻ Apagar";$("power").classList.add("active");
+ message("Motor encendido.");
+ }catch(e){message("No se pudo iniciar el audio: "+e.message)}
+ finally{startBusy=false}
+};
+document.querySelectorAll("[data-sound]").forEach(input=>{
+ input.onchange=async()=>{
+  const file=input.files[0];if(!file)return;
+  try{
+   await initAudio();
+   const decoded=await audio.decodeAudioData(await file.arrayBuffer());
+   buffers[input.dataset.sound]=decoded;syncLoops();
+   $("audioStatus").textContent="Cargado: "+file.name;
+  }catch(e){$("audioStatus").textContent="No se pudo decodificar el archivo. Prueba WAV, MP3 u OGG."}
+ };
+});
+function pressed(name){return keys[name]||pointer[name]}
+function bindPedal(id,name){
+ const el=$(id);
+ el.addEventListener("pointerdown",e=>{
+  e.preventDefault();el.setPointerCapture(e.pointerId);pointer[name]=true;
+ });
+ for(const event of ["pointerup","pointercancel","lostpointercapture"])
+ el.addEventListener(event,()=>pointer[name]=false);
+}
+bindPedal("gas","gas");bindPedal("clutch","clutch");bindPedal("brake","brake");
+function changeGear(g,auto=false){
+ g=clamp(g,0,6);if(g===S.gear)return;
+ if(!auto&&!$("automatic").checked&&!pressed("clutch")){
+  message("Pisa el embrague para cambiar de marcha.");return;
+ }
+ const nextRpm=S.speed*ratios[g]*36;
+ if(g&&nextRpm>limit()*1.08){message("Reducción bloqueada: régimen demasiado alto.");return}
+ S.gear=g;S.cooldown=.24;effect("shift");
+ if(g&&S.speed>3)S.rpm=Math.max(850,nextRpm);
+ if(S.boost>.25){effect("blow");S.boost*=.3}
+ message(g?"Marcha "+g:"Punto muerto");
+}
+for(let g=0;g<=6;g++){
+ const b=document.createElement("button");b.textContent=g||"N";
+ b.onclick=()=>changeGear(g);$("gears").appendChild(b);
+}
+$("up").onclick=()=>changeGear(S.gear+1);
+$("down").onclick=()=>changeGear(S.gear-1);
+function isField(e){return /INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)}
+addEventListener("keydown",e=>{
+ if(isField(e))return;
+ if(["Space","ShiftLeft","ArrowUp","ArrowDown","KeyB"].includes(e.code))e.preventDefault();
+ if(e.code==="Space")keys.gas=true;
+ if(e.code==="ShiftLeft")keys.clutch=true;
+ if(e.code==="KeyB")keys.brake=true;
+ if(!e.repeat&&e.code==="ArrowUp")changeGear(S.gear+1);
+ if(!e.repeat&&e.code==="ArrowDown")changeGear(S.gear-1);
+});
+addEventListener("keyup",e=>{
+ if(e.code==="Space")keys.gas=false;
+ if(e.code==="ShiftLeft")keys.clutch=false;
+ if(e.code==="KeyB")keys.brake=false;
+});
+function release(){for(const k in keys){keys[k]=false;pointer[k]=false}$("hold").value=0}
+addEventListener("blur",release);
+document.addEventListener("visibilitychange",()=>{
+ if(document.hidden){release();if(audio)audio.suspend()}
+ else if(audio)audio.resume().catch(()=>{});
+});
+$("engine").onchange=()=>{S.phase=0;message("Configuración cambiada; representación educativa.")};
+function limit(){return $("engine").value==="rotary"?9500:$("ecu").checked?8000:6800}
+function physics(dt){
+ S.cooldown=Math.max(0,S.cooldown-dt);autoTime=Math.max(0,autoTime-dt);
+ S.gas=Math.max(pressed("gas")?1:0,+$("hold").value/100);
+ const clutch=pressed("clutch"), red=limit();
+ if(lastGas-S.gas>.25&&S.boost>.2){effect("blow");S.boost*=.3}
+ lastGas=S.gas;
+ const desiredBoost=S.on&&$("turbo").checked?S.gas*clamp((S.rpm-1800)/3500,0,1):0;
+ S.boost+=(desiredBoost-S.boost)*Math.min(1,dt*3);
+ const engaged=S.gear>0&&!clutch;
+ const drive=S.on&&engaged&&S.cooldown===0;
+ if(drive){
+  const size=$("engine").value==="rotary"?1.1:Math.sqrt(+$("engine").value/4);
+  const force=S.gas*ratios[S.gear]*12*size*(1+S.boost*.5)*($("ecu").checked?1.12:1);
+  S.speed+=force*(S.rpm<red?1:0)*dt;
+ }
+ const drag=.25+S.speed*.016+S.speed*S.speed*.0002+
+ (engaged?(1-S.gas)*ratios[S.gear]*.65:0)+(pressed("brake")?36:0);
+ S.speed=clamp(S.speed-drag*dt,0,340);
+ let rpmTarget=0;
+ if(S.on){
+  rpmTarget=engaged?Math.max(850,S.speed*ratios[S.gear]*36):850+S.gas*(red-850);
+  if(S.cooldown>0)rpmTarget*=.82;
+ }
+ S.rpm+=(rpmTarget-S.rpm)*Math.min(1,dt*(engaged?8:3.5));
+ S.rpm=clamp(S.rpm,0,red+200);
+ if(!S.on&&S.rpm<1)S.rpm=0;
+ if(S.on&&$("automatic").checked&&!clutch&&autoTime===0){
+  if(S.gear===0&&S.gas>.1){changeGear(1,true);autoTime=.7}
+  else if(S.rpm>red*.88&&S.gear<6){changeGear(S.gear+1,true);autoTime=.7}
+  else if(S.rpm<1600&&S.gear>1){changeGear(S.gear-1,true);autoTime=.7}
+ }
+ S.phase=(S.phase+S.rpm/60*TAU*dt*.045)%(TAU*6);
+ $("rpm").textContent=Math.round(S.rpm);
+ $("speed").textContent=Math.round(S.speed);
+ $("gear").textContent=S.gear||"N";$("boost").textContent=S.boost.toFixed(2);
+ $("rpmbar").style.width=clamp(S.rpm/red*100,0,100)+"%";
+ $("shift").textContent=S.rpm>red*.87&&S.gear<6?"¡CAMBIA DE MARCHA!":"";
+ $("holdval").textContent=$("hold").value+"%";
+ $("gas").classList.toggle("pressed",pressed("gas")||S.gas>.05);
+ $("clutch").classList.toggle("pressed",clutch);
+ $("brake").classList.toggle("active",pressed("brake"));
+ [...$("gears").children].forEach((b,i)=>b.classList.toggle("active",i===S.gear));
+ updateAudio();
+}
+const canvas=$("view"),ctx=canvas.getContext("2d");
+let W=600,H=330,dpr=1;
+function resize(){
+ const r=canvas.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(devicePixelRatio||1,2);
+ canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
+}
+new ResizeObserver(resize).observe(canvas);
+function line(x1,y1,x2,y2,color,width=3){
+ ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+}
+function circle(x,y,r,color){
+ ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();
+}
+function text(t,x,y,color="#dce7f4",size=12){
+ ctx.fillStyle=color;ctx.font=size+"px system-ui";ctx.textAlign="center";ctx.fillText(t,x,y);
+}
+function particles(x,y,w,h,phase,count=6){
+ if(h<12||w<15)return;
+ ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+ const species=phase<2?["O₂","C₈H₁₈"]:["CO₂","H₂O"];
+ for(let i=0;i<count;i++){
+  const px=x+8+((i*.618+S.phase*.015)%1)*Math.max(1,w-16);
+  const py=y+9+((i*.377+Math.sin(S.phase+i)*.07+2)%1)*Math.max(1,h-18);
+  text(species[i%2],px,py,colors[phase],Math.min(10,w/3));
+ }
+ ctx.restore();
+}
+function pistons(){
+ const n=+$("engine").value,rows=n>4?2:1,cols=n/rows;
+ const cell=W/cols,rowH=H/rows;
+ for(let i=0;i<n;i++){
+  const row=Math.floor(i/cols),col=i%cols;
+  const cx=cell*(col+.5),top=row*rowH+30;
+  const a=S.phase+i*TAU*2/n;
+  const phase=Math.floor(((a%(TAU*2))+TAU*2)%(TAU*2)/(Math.PI));
+  const crankY=row*rowH+rowH*.78,r=rowH*.11,L=rowH*.30;
+  const pinX=cx+Math.sin(a)*r,pinY=crankY-Math.cos(a)*r;
+  const py=pinY-Math.sqrt(L*L-(pinX-cx)**2);
+  const bore=Math.min(cell*.62,88);
+  ctx.fillStyle="#253445";ctx.fillRect(cx-bore/2-5,top,bore+10,crankY-top-r*.3);
+  ctx.fillStyle="#0b1420";ctx.fillRect(cx-bore/2,top+5,bore,crankY-top-r*.3-5);
+  if($("xray").checked){
+   ctx.fillStyle=colors[phase]+"33";
+   ctx.fillRect(cx-bore/2,top+5,bore,Math.max(0,py-top-5));
+   particles(cx-bore/2,top+5,bore,py-top-5,phase);
+  }
+  line(cx,py+6,pinX,pinY,"#9eabb9",7);
+  circle(cx,crankY,r+6,"#293b51");
+  line(cx,crankY,pinX,pinY,"#bcc7d3",7);
+  circle(pinX,pinY,5,"#48d9c5");
+  ctx.fillStyle="#b5c1ce";ctx.fillRect(cx-bore/2+2,py,bore-4,16);
+  line(cx-bore/2+3,py+5,cx+bore/2-3,py+5,"#405069",2);
+  line(cx,top-1,cx,top+8,"#e5dfac",4);
+  if(phase===2&&Math.cos(a)>.88&&S.on)circle(cx,top+10,6,"#fff3b1");
+  text((rows===2?(row===0?"A":"B"):"C")+(col+1),cx,top-10,"#93a9c2",11);
+  text($("xray").checked?names[phase]:"Cilindro "+(i+1),cx,row*rowH+rowH-6,colors[phase],11);
+ }
+}
+function rotary(){
+ const scale=Math.min(W/6.8,H/5.5),R=1.65*scale,e=.38*scale;
+ const cx=W/2,cy=H/2,shaft=S.phase,angle=shaft/3;
+ const rx=cx+e*Math.cos(shaft),ry=cy+e*Math.sin(shaft);
+ ctx.beginPath();
+ for(let i=0;i<=240;i++){
+  const t=i/240*TAU;
+  const x=cx+R*Math.cos(t)+e*Math.cos(3*t);
+  const y=cy+R*Math.sin(t)+e*Math.sin(3*t);
+  i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+ }
+ ctx.closePath();ctx.fillStyle="#203347";ctx.fill();ctx.lineWidth=8;ctx.strokeStyle="#71849b";ctx.stroke();
+ if($("xray").checked){
+  for(let j=0;j<3;j++){
+   const a=angle+j*TAU/3+Math.PI/3;
+   const phase=Math.floor(((shaft+j*TAU)%(TAU*2))/(Math.PI));
+   const x=cx+Math.cos(a)*R*.93,y=cy+Math.sin(a)*R*.85;
+   circle(x,y,19,colors[phase]+"55");
+   text(names[phase],x,y,colors[phase],10);
+  }
+ }
+ const pts=Array.from({length:3},(_,i)=>{
+  const a=angle+i*TAU/3;return [rx+R*Math.cos(a),ry+R*Math.sin(a)];
+ });
+ ctx.beginPath();ctx.moveTo(...pts[0]);
+ for(let i=0;i<3;i++){
+  const p=pts[i],q=pts[(i+1)%3],mx=(p[0]+q[0])/2,my=(p[1]+q[1])/2;
+  ctx.quadraticCurveTo(rx+(mx-rx)*1.5,ry+(my-ry)*1.5,...q);
+ }
+ ctx.closePath();ctx.fillStyle=$("xray").checked?"#62899cb8":"#8a9fae";ctx.fill();
+ ctx.strokeStyle="#c3d2df";ctx.lineWidth=3;ctx.stroke();
+ circle(rx,ry,scale*.43,"#172a3e");
+ line(cx,cy,rx,ry,"#f4c36d",8);circle(cx,cy,7,"#fff0c1");
+ text("Eje excéntrico · rotor a ⅓ de su velocidad",cx,H-16,"#adc2d9",12);
+}
+function draw(){
+ ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+ if($("engine").value==="rotary")rotary();else pistons();
+ const phase=Math.floor((S.phase%(TAU*2))/Math.PI);
+ $("chem").textContent=!$("xray").checked?"Activa X-Ray para visualizar las fases y las especies químicas.":
+ !S.on?"Motor apagado. La ecuación muestra el balance ideal de combustión.":
+ names[phase]+": "+[
+ "entran aire y combustible; todavía no se representan productos de combustión.",
+ "se comprime la mezcla; aumentan su presión y temperatura.",
+ "la combustión libera energía y los gases se expanden, produciendo trabajo.",
+ "los productos de combustión salen para dar paso al siguiente ciclo."
+ ][phase];
+}
+let previous=performance.now();
+function frame(now){
+ const dt=Math.min((now-previous)/1000,.05);previous=now;
+ physics(dt);draw();requestAnimationFrame(frame);
+}
+resize();requestAnimationFrame(frame);
+</script>
+</body>
+</html>
